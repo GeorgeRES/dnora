@@ -130,6 +130,7 @@ class ERA5(ForcingReader):
 
         nc_file = download_era5_from_cds(start_time, end_time, lon=(lon_min, lon_max), lat=(lat_min, lat_max), folder='dnora_wnd_temp')
         wind_forcing = xr.open_dataset(nc_file)
+        breakpoint()
         wind_forcing = wind_forcing.rename_dims({'longitude': 'lon', 'latitude': 'lat'})
         wind_forcing = wind_forcing.rename_vars({'longitude': 'lon', 'latitude': 'lat'})
         wind_forcing = wind_forcing.rename_vars({'u10': 'u', 'v10': 'v'})
@@ -138,5 +139,104 @@ class ERA5(ForcingReader):
 
         # Extract relevant timestamps
         wind_forcing = wind_forcing.sel(time=slice(start_time, end_time))
+
+        return wind_forcing
+
+
+
+
+def download_cerra_from_cds(start_time, end_time, lon, lat, folder='dnora_wnd_temp') -> str:
+    """Downloads CERRA 10 m wind data from the Copernicus Climate Data Store for a
+    given area and time period"""
+    start_time = pd.Timestamp(start_time)
+    end_time = pd.Timestamp(end_time)
+    c = cdsapi.Client()
+
+    filename = f'{folder}/EC_CERRA.nc'
+
+    days = day_list(start_time, end_time)
+    # Create string for dates
+    dates = [days[0].strftime('%Y-%m-%d'), days[-1].strftime('%Y-%m-%d')]
+    dates = '/'.join(dates)
+
+    cds_command = {
+        'format': 'netcdf',
+        'variable': [
+            '10m_wind_direction', '10m_wind_speed',
+        ],
+        'level_type': 'surface_or_atmosphere',
+        'data_type': 'reanalysis',
+        'product_type': 'analysis',
+        'date': dates,
+        'time': [
+            '00:00', '01:00', '02:00',
+            '03:00', '04:00', '05:00',
+            '06:00', '07:00', '08:00',
+            '09:00', '10:00', '11:00',
+            '12:00', '13:00', '14:00',
+            '15:00', '16:00', '17:00',
+            '18:00', '19:00', '20:00',
+            '21:00', '22:00', '23:00',
+        ]
+#        'area': [
+#            lat[1], lon[0], lat[0],
+            #lat[1], 4, lat[0],
+#            lon[1],
+#        ],
+    }
+
+    c.retrieve('reanalysis-cerra-single-levels', cds_command, filename)
+    return filename
+
+
+class CERRA(ForcingReader):
+    """Reads CERRA wind data
+    """
+
+    def __call__(self, grid: Grid, start_time: str, end_time: str, expansion_factor: float):
+        """Reads boundary spectra between given times and given area around
+        the Grid object."""
+
+        msg.info(
+            f"Getting ERA5 wind forcing from {start_time} to {end_time}")
+
+
+        temp_folder = 'dnora_wnd_temp'
+        if not os.path.isdir(temp_folder):
+            os.mkdir(temp_folder)
+            print("Creating folder %s..." % temp_folder)
+
+        msg.plain("Removing old files from temporary folder...")
+        for f in glob.glob("dnora_wnd_temp/EC_CERRA.nc"):
+            os.remove(f)
+
+        # Define area to search in
+        lon_min, lon_max, lat_min, lat_max = expand_area(min(grid.lon()), max(grid.lon()), min(grid.lat()), max(grid.lat()), expansion_factor)
+
+
+        # start_times, end_times = create_monthly_time_stamps(start_time, end_time)
+        # wnd_list = []
+        # for t0, t1 in zip(start_times, end_times):
+        #     msg.plain(f"Reading wind forcing data: {t0}-{t1}")
+        #     # Creates file dnora_wnd_tmp/EC_ERA5_YYYY_MM.nc
+
+        nc_file = download_cerra_from_cds(start_time, end_time, lon=(lon_min, lon_max), lat=(lat_min, lat_max), folder='dnora_wnd_temp')
+        wind_forcing = xr.open_dataset(nc_file)
+        wind_forcing = wind_forcing.rename_dims({'y': 'lat', 'x': 'lon'})
+        wind_forcing = wind_forcing.rename_vars({'longitude': 'lon', 'latitude': 'lat'})
+
+        # Go to u and v components
+        u, v = u_v_from_dir(wind_forcing.si10,wind_forcing.wdir10)
+        u = u.fillna(0)
+        v = v.fillna(0)
+
+        # Remove speed and dir and add components to dataset
+        wind_forcing = wind_forcing.drop_vars(['si10', 'wdir10'])
+        wind_forcing['u'] = (['time', 'lat', 'lon'],  u.data)
+        wind_forcing['v'] = (['time', 'lat', 'lon'],  v.data)
+
+        # Extract relevant timestamps
+        wind_forcing = wind_forcing.sel(time=slice(start_time, end_time))
+        breakpoint()
 
         return wind_forcing
