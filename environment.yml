@@ -19,4 +19,6 @@ dependencies:
   - cartopy
   - cdsapi
   - fimex=1.8.1
+  - cfgrib
+  - python-cdo
   - ipython
