@@ -64,9 +64,13 @@ class SWAN(InputFileWriter):
         calib_wind: float = 1.0,
         calib_wcap: float = 0.5000e-04,
         use_wind: bool = True,
+        use_ocr: bool = False,
+        use_ice: bool = False,
         **kwargs,
     ) -> str:
         forcing = model.forcing()
+        ice = model.ice()
+        ocr = model.oceancurrent()
         grid = model.grid()
         grid_path = exported_files["grid"][-1]
         forcing_path = exported_files["forcing"][-1]
@@ -187,6 +191,69 @@ class SWAN(InputFileWriter):
                 file_out.write("$ \n")
             else:
                 file_out.write("OFF QUAD \n")
+            
+            if use_ice:
+                file_out.write(
+                    "INPGRID AICE "
+                    + str(ice.lon()[0])
+                    + " "
+                    + str(ice.lat()[0])
+                    + " 0. "
+                    + str(ice.nx() - 1)
+                    + " "
+                    + str(ice.ny() - 1)
+                    + " "
+                    + str((delta_Xf / (ice.nx() - 1)).round(6))
+                    + " "
+                    + str((delta_Yf / (ice.ny() - 1)).round(6))
+                    + " NONSTATIONARY "
+                    + STR_START
+                    + f" {ice.dt():.0f} HR "
+                    + STR_END
+                    + "\n"
+                )
+                file_out.write(
+                    "READINP AICE "
+                    + str(factor_ice)
+                    + "  '"
+                    + forcing_path.split("/")[-1]
+                    + "' 3 0 0 1 FREE \n"
+                )
+                file_out.write("$ \n")
+            else:
+                pass
+
+            if use_ocr:
+                file_out.write(
+                    "INPGRID CURRENT "
+                    + str(ocr.lon()[0])
+                    + " "
+                    + str(ocr.lat()[0])
+                    + " 0. "
+                    + str(ocr.nx() - 1)
+                    + " "
+                    + str(ocr.ny() - 1)
+                    + " "
+                    + str((delta_Xf / (ocr.nx() - 1)).round(6))
+                    + " "
+                    + str((delta_Yf / (ocr.ny() - 1)).round(6))
+                    + " NONSTATIONARY "
+                    + STR_START
+                    + f" {ice.dt():.0f} HR "
+                    + STR_END
+                    + "\n"
+                )
+                file_out.write(
+                    "READINP CURRENT "
+                    + str(factor_ocr)
+                    + "  '"
+                    + forcing_path.split("/")[-1]
+                    + "' 3 0 0 1 FREE \n"
+                )
+                file_out.write("$ \n")
+            else:
+                pass 
+
             file_out.write("GEN3 WESTH cds2=" + str(calib_wcap) + "\n")
             file_out.write("FRICTION JON 0.067 \n")
             file_out.write("PROP BSBT \n")
