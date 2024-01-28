@@ -56,6 +56,7 @@ class NORA3(IceReader):
         start_time: str,
         end_time: str,
         source: DataSource,
+        folder: str,
         expansion_factor: float = 1.2,
         **kwargs,
     ):
@@ -140,7 +141,6 @@ class NORA3(IceReader):
 
         ice = xr.concat(ice_list, dim="time")
 
-        # Go to u and v components
         sic = ice.SIC.values
 
         time = ice.time.values
@@ -205,13 +205,17 @@ class Barents25(IceReader):
         self.program = program
         return
 
+    def default_data_source(self) -> DataSource:
+        return DataSource.REMOTE
+
     def __call__(
         self,
         grid: Grid,
         start_time: str,
         end_time: str,
         source: DataSource,
-        expansion_factor: float,
+        folder: str,
+        expansion_factor: float = 1.2,
     ):
         """Reads in all grid points between the given times and at for the given indeces"""
         self.start_time = start_time
@@ -239,24 +243,19 @@ class Barents25(IceReader):
         for f in glob.glob("dnora_ice_temp/*MetNo_Barents25.nc"):
             os.remove(f)
 
+
         # Define area to search in
-        lon_min, lon_max, lat_min, lat_max = expand_area(
-            min(grid.lon()),
-            max(grid.lon()),
-            min(grid.lat()),
-            max(grid.lat()),
-            expansion_factor,
-        )
+        lon, lat = expand_area(grid.edges("lon"), grid.edges("lat"), expansion_factor)
 
         # Setting resolution to roughly 0.8 km
         dlat = 2.5 / 111
         mean_lon_in_km = (lon_in_km(min(grid.lat())) + lon_in_km(max(grid.lat()))) * 0.5
         dlon = 2.5 / mean_lon_in_km
 
-        ocr_list = []
+        ice_list = []
         print("Apply >>> " + self.program)
         for n in range(len(file_times)):
-            url = self.get_url(file_times[n])
+            url = self.get_url(file_times[n],source=source)
 
             msg.from_file(url)
             msg.plain(
@@ -264,57 +263,43 @@ class Barents25(IceReader):
             )
 
             nc_fimex = f"dnora_ice_temp/ice_{n:04.0f}_MetNo_Barents25.nc"
-            # Apply pyfimex or fimex
-            if self.program == "pyfimex":
-                pyfimex(
-                    input_file=url,
-                    output_file=nc_fimex,
-                    projString="+proj=latlong +ellps=sphere +a=6371000 +e=0",
-                    xAxisValues=np.arange(lon_min, lon_max + dlon, dlon),
-                    yAxisValues=np.arange(lat_min, lat_max + dlat, dlat),
-                    selectVariables=["ice_concentration", "ice_thickness"],
-                    reduceTime_start=start_times[n].strftime("%Y-%m-%dT%H:%M:%S"),
-                    reduceTime_end=end_times[n].strftime("%Y-%m-%dT%H:%M:%S"),
-                )
-            elif self.program == "fimex":
-                fimex_command = [
-                    "fimex",
-                    "--input.file=" + url,
-                    "--interpolate.method=bilinear",
-                    "--interpolate.projString=+proj=latlong +ellps=sphere +a=6371000 +e=0",
-                    "--interpolate.xAxisValues="
-                    + str(lon_min)
-                    + ","
-                    + str(lon_min + dlon)
-                    + ",...,"
-                    + str(lon_max)
-                    + "",
-                    "--interpolate.yAxisValues="
-                    + str(lat_min)
-                    + ","
-                    + str(lat_min + dlat)
-                    + ",...,"
-                    + str(lat_max)
-                    + "",
-                    "--interpolate.xAxisUnit=degree",
-                    "--interpolate.yAxisUnit=degree",
-                    "--process.rotateVector.all",
-                    #"--extract.selectVariables=ice_thickness",
-                    "--extract.selectVariables=ice_concentration",
-                    "--extract.reduceTime.start="
-                    + start_times[n].strftime("%Y-%m-%dT%H:%M:%S"),
-                    "--extract.reduceTime.end="
-                    + end_times[n].strftime("%Y-%m-%dT%H:%M:%S"),
-                    "--process.rotateVector.direction=latlon",
-                    #'--extract.reduceDimension.name=depth',
-                    #'--extract.reduceDimension.start=0',
-                    #'--extract.reduceDimension.end=0',
-                    "--output.file=" + nc_fimex,
-                ]
-                call(fimex_command)
-            ocr_list.append(xr.open_dataset(nc_fimex).squeeze())
-
-        ds = xr.concat(ocr_list, dim="time")
+            # Apply fimex
+            fimex_command = [
+                "fimex",
+                "--input.file=" + url,
+                "--interpolate.method=bilinear",
+                "--interpolate.projString=+proj=latlong +ellps=sphere +a=6371000 +e=0",
+                "--interpolate.xAxisValues="
+                + str(lon[0])
+                + ","
+                + str(lon[0] + dlon)
+                + ",...,"
+                + str(lon[1])
+                + "",
+                "--interpolate.yAxisValues="
+                + str(lat[0])
+                + ","
+                + str(lat[0] + dlat)
+                + ",...,"
+                + str(lat[1])
+                + "",
+                "--interpolate.xAxisUnit=degree",
+                "--interpolate.yAxisUnit=degree",
+                "--process.rotateVector.all",
+                #"--process.rotateVector.direction=latlon",
+                #"--extract.selectVariables=ice_thickness",
+                "--extract.selectVariables=ice_concentration",
+                "--extract.reduceTime.start="
+                + start_times[n].strftime("%Y-%m-%dT%H:%M:%S"),
+                "--extract.reduceTime.end="
+                + end_times[n].strftime("%Y-%m-%dT%H:%M:%S"),
+                #'--extract.reduceDimension.name=depth',
+                #'--extract.reduceDimension.end=0',
+                "--output.file=" + nc_fimex,
+            ]
+            call(fimex_command)
+            ice_list.append(xr.open_dataset(nc_fimex).squeeze())
+        ds = xr.concat(ice_list, dim="time")
 
         # ice_forcing = ice_forcing.transpose("time", "lat", "lon")
         x = None
@@ -330,14 +315,15 @@ class Barents25(IceReader):
             ds.attrs,
         )
 
-    @staticmethod
-    def get_url(time_stamp):
-          #https://thredds.met.no/thredds/dodsC/fou-hi/barents_eps_surface/2023/04/23/T00Z/barents_sfc_20230423T00Zm00.nc
+    def get_url(self, time_stamp, source):
         filename = (
             "barents_sfc_" + time_stamp.strftime("%Y%m%d") + "T" 
             + time_stamp.strftime("%H") + "Zm" + time_stamp.strftime("%H")+".nc"
         )
-        url = "https://thredds.met.no/thredds/dodsC/fou-hi/barents_eps_surface/"
+
+        if source == DataSource.REMOTE:
+            return (
+            "https://thredds.met.no/thredds/dodsC/fou-hi/barents_eps_surface/"
         + time_stamp.strftime("%Y")
         + "/"
         + time_stamp.strftime("%m")
@@ -347,5 +333,7 @@ class Barents25(IceReader):
         + time_stamp.strftime("%H")
         + "Z/"
         + filename
-        
-        return url
+            )
+        else:
+            pass
+            return source + "/" + filename

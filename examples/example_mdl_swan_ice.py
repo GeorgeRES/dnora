@@ -29,8 +29,8 @@ grid.set_boundary_points(bnd_set)
 # DEFINE MODEL OBJECT (mdl.)
 # =============================================================================
 # Options for mdl: SWAN_NORA3, SWAN_ERA5, SWAN_WW3_4km, SWAN_WAM4km
-model = mdl.NORA3(grid, start_time='2021-11-21T12:00',
-                               end_time='2021-11-21T13:00')
+model = mdl.NORA3(grid, start_time='2023-11-21T12:00',
+                               end_time='2023-11-21T13:00')
 # =============================================================================
 # IMPORT BOUNDARIES AND FORCING
 # =============================================================================
@@ -39,7 +39,7 @@ model = mdl.NORA3(grid, start_time='2021-11-21T12:00',
 #model.import_boundary(bnd.read_metno.NORA3(source='lustre'),write_cache=True, read_cache=False) # for internal
 
 # Wind Forcing
-model.import_forcing(write_cache=True)
+#model.import_forcing(write_cache=True)
 #model.import_forcing(wnd.read_metno.NORA3(source='lustre'),write_cache=True, read_cache=False)  # for internal
 
 # Ocean Current
@@ -49,8 +49,8 @@ model.import_forcing(write_cache=True)
 #model.import_waterlevel(wlv.read_ec.GTSM_ERA5())
 
 # Ice Forcing
-model.import_ice()
-#model.import_ice(ice.read_metno.Barents25())
+#model.import_ice()
+model.import_ice(ice.read_metno.Barents25())
 # =============================================================================
 # PLOT GRID, FORCING AND BOUNDARIES
 # =============================================================================
@@ -58,15 +58,15 @@ model.import_ice()
 # =============================================================================
 # WRITE OUTPUT FOR SWAN RUN
 # =============================================================================
-model.export_grid()
+#model.export_grid()
 #model.export_boundary()
 #model.export_forcing()
 #model.export_oceancurrent()
 #model.export_waterlevel()
-model.export_ice()
+#model.export_ice()
 #model.write_input_file(input_file_writer=inp.SWAN(
 #    spec_points=[(5.50, 59.16), (5.55, 59.15)]))
 # =============================================================================
 # SWAN RUN
 # =============================================================================
-model.run_model(model_executer = run.SWAN(nproc=15))
+#model.run_model(model_executer = run.SWAN(nproc=15))
